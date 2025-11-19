@@ -20,7 +20,8 @@ jobs:
           node-version: 18
 
       - name: Install dependencies
-        run: npm install openai
+        run: |
+          npm install openai @octokit/core
 
       - name: Run AI Review
         env:
