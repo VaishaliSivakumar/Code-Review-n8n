@@ -3,6 +3,8 @@ name: AI Code Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    branches:
+      - main
 
 jobs:
   review:
@@ -12,21 +14,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Save PR diff
-        run: |
-          git diff origin/main...HEAD > diff.txt
-
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
       - name: Install dependencies
-        run: npm install openai @octokit/rest
+        run: npm install openai
 
-      - name: Run AI reviewer
+      - name: Run AI Review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node ai-review.js
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/workflows/ai-review.js
