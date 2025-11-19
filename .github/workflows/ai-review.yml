@@ -26,4 +26,4 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: node .github/workflows/ai-review.js
+        run: node .github/workflows/ai-review.mjs
