@@ -1,56 +1,56 @@
-import { Octokit } from "@octokit/core";
-import OpenAI from "openai";
-import fs from "fs";
-
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Get repo + PR info from GitHub Actions env
-const repo = process.env.GITHUB_REPOSITORY.split("/");
-const owner = repo[0];
-const repoName = repo[1];
-const prNumber = process.env.GITHUB_REF.split("/")[2];
+import fetch from "node-fetch";
 
 async function runReview() {
+  const token = process.env.GITHUB_TOKEN;
+  const geminiKey = process.env.GEMINI_API_KEY;
+
+  const prNumber = process.env.PR_NUMBER;
+  const repo = process.env.GITHUB_REPOSITORY;
+
+  const [owner, repoName] = repo.split("/");
+
   console.log("🔍 Fetching PR changed files...");
 
-  const changes = await octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}/files", {
-    owner: owner,
-    repo: repoName,
-    pull_number: prNumber,
+  // Fetch changed files from GitHub
+  const res = await fetch(`https://api.github.com/repos/${repo}/pulls/${prNumber}/files`, {
+    headers: { Authorization: `Bearer ${token}` }
   });
 
-  let content = "";
+  const files = await res.json();
+  let diffText = files.map(f => f.patch).join("\n");
 
-  changes.data.forEach(file => {
-    content += `\n\n📝 File: ${file.filename}\n${file.patch}\n`;
+  console.log("🤖 Asking Gemini for review...");
+
+  // Send to Gemini API
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateText?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: {
+          text: "You are a strict senior code reviewer. Review this code diff:\n" + diffText
+        }
+      })
+    }
+  );
+
+  const geminiResult = await geminiRes.json();
+  const review = geminiResult.candidates?.[0]?.outputText || "No review generated.";
+
+  console.log("💬 Posting review to PR...");
+
+  // Post review comment
+  await fetch(`https://api.github.com/repos/${repo}/issues/${prNumber}/comments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ body: review })
   });
 
-  console.log("🤖 Asking AI for review...");
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: "You are a senior frontend engineer. Review code for bugs, performance, readability." },
-      { role: "user", content: `Review this code diff:\n${content}` }
-    ]
-  });
-
-  const reviewComment = response.choices[0].message.content;
-
-  console.log("📌 Review Response:", reviewComment);
-
-  await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
-    owner: owner,
-    repo: repoName,
-    issue_number: prNumber,
-    body: `### 🤖 AI Code Review\n\n${reviewComment}`
-  });
-
-  console.log("✅ AI Review Completed!");
+  console.log("✅ Review posted successfully!");
 }
 
-runReview().catch(error => {
-  console.error("❌ Error:", error);
+runReview().catch(err => {
+  console.error("❌ Error:", err);
   process.exit(1);
 });
